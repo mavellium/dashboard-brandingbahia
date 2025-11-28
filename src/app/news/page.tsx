@@ -3,10 +3,10 @@
 
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { 
-  Plus, 
-  Trash2, 
-  Save, 
+import {
+  Plus,
+  Trash2,
+  Save,
   Image as ImageIcon,
   X,
   FileText,
@@ -72,9 +72,9 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
   }, [type]);
 
   const addNews = () =>
-    setNewsList([...newsList, { 
-      fallback: "", 
-      title: "", 
+    setNewsList([...newsList, {
+      fallback: "",
+      title: "",
       file: null,
       link: ""
     }]);
@@ -227,7 +227,7 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
             {exists ? "Editar Newsletter" : "Criar Newsletter"}
           </h1>
           <p className="text-zinc-600 dark:text-zinc-400 mt-2">
-            Gerencie a newsletter da sua empresa
+            Gerencie as newsletter
           </p>
         </motion.div>
 
@@ -258,7 +258,7 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
                           Newsletter #{index + 1}
                         </h3>
                       </div>
-                      
+
                       {newsList.length > 1 && (
                         <Button
                           type="button"
@@ -275,35 +275,9 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Texto Alternativo para a imagem
-                          </label>
-                          <Input
-                            type="text"
-                            placeholder="Texto alternativo para acessibilidade..."
-                            value={news.fallback}
-                            onChange={(e: any) => handleChange(index, "fallback", e.target.value)}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Título
-                          </label>
-                          <Input
-                            type="text"
-                            placeholder="Título para a newsletter"
-                            value={news.title}
-                            onChange={(e: any) => handleChange(index, "title", e.target.value)}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
                             Imagem
                           </label>
-                          
+
                           {imageUrl && (
                             <div className="mb-4">
                               <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-2">
@@ -343,12 +317,39 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
                               </div>
                             </label>
                           </div>
-                          
+
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
                             {hasImage && !news.file
                               ? "Imagem atual do servidor. Selecione um novo arquivo para substituir."
                               : "Formatos suportados: JPG, PNG, WEBP."}
                           </p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                            Texto Alternativo para a imagem
+                          </label>
+                          <Input
+                            type="text"
+                            placeholder="Texto alternativo para acessibilidade..."
+                            value={news.fallback}
+                            onChange={(e: any) => handleChange(index, "fallback", e.target.value)}
+                          />
+                        </div>
+
+
+                      </div>
+
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                            Título
+                          </label>
+                          <Input
+                            type="text"
+                            placeholder="Título para a newsletter"
+                            value={news.title}
+                            onChange={(e: any) => handleChange(index, "title", e.target.value)}
+                          />
                         </div>
 
                         <div>
