@@ -14,17 +14,15 @@ import {
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
 import { Button } from "@/components/Button";
-import { TextArea } from "@/components/TextArea";
 import Image from "next/image";
 
 interface NewsItem {
   id?: string;
-  name: string;
-  role: string;
-  avatar: string;
   fallback: string;
-  content: string;
+  title: string;
   file?: File | null;
+  image?: string;
+  link: string;
 }
 
 interface FormDataType {
@@ -33,9 +31,9 @@ interface FormDataType {
   values: NewsItem[];
 }
 
-export default function NewsPage({ type = "news" }: { type: string }) {
+export default function NewsPage({ type = "newsletter" }: { type: string }) {
   const [newsList, setNewsList] = useState<NewsItem[]>([
-    { name: "", role: "", avatar: "", fallback: "", content: "", file: null },
+    { fallback: "", title: "", file: null, link: "" },
   ]);
   const [exists, setExists] = useState<FormDataType | null>(null);
   const [loading, setLoading] = useState(false);
@@ -55,12 +53,11 @@ export default function NewsPage({ type = "news" }: { type: string }) {
           const item = data[0];
           const safeList = item.values.map((n) => ({
             id: n.id,
-            name: n.name || "",
-            role: n.role || "",
-            avatar: n.avatar || "",
             fallback: n.fallback || "",
-            content: n.content || "",
+            title: n.title || "",
             file: null,
+            image: n.image || "", // CORREÇÃO: mudado de imageUrl para image
+            link: n.link || ""
           }));
 
           setExists(item);
@@ -76,12 +73,10 @@ export default function NewsPage({ type = "news" }: { type: string }) {
 
   const addNews = () =>
     setNewsList([...newsList, { 
-      name: "", 
-      role: "", 
-      avatar: "", 
       fallback: "", 
-      content: "", 
-      file: null 
+      title: "", 
+      file: null,
+      link: ""
     }]);
 
   const handleChange = (index: number, field: keyof NewsItem, value: any) => {
@@ -93,29 +88,38 @@ export default function NewsPage({ type = "news" }: { type: string }) {
   const handleFileChange = (index: number, file: File | null) => {
     const newList = [...newsList];
     newList[index].file = file;
+    // Limpa a imagem do servidor quando um novo arquivo é selecionado
+    if (file) {
+      newList[index].image = "";
+    }
     setNewsList(newList);
   };
 
   const getImageUrl = (news: NewsItem): string => {
-    if (news.file) return URL.createObjectURL(news.file);
-    return news.avatar;
+    if (news.file) {
+      return URL.createObjectURL(news.file);
+    }
+    if (news.image) {
+      return news.image;
+    }
+    return "";
   };
 
   const updateNews = async (list: NewsItem[]) => {
     if (!exists) return;
 
     const filteredList = list.filter(
-      n => n.name.trim() || n.role.trim() || n.fallback.trim() || n.content.trim() || n.file || n.avatar
+      n => n.fallback.trim() || n.title.trim() || n.file || n.link.trim() || n.image
     );
 
     const fd = new FormData();
     filteredList.forEach((n, i) => {
-      fd.append(`values[${i}][name]`, n.name);
-      fd.append(`values[${i}][role]`, n.role);
-      fd.append(`values[${i}][avatar]`, n.avatar);
       fd.append(`values[${i}][fallback]`, n.fallback);
-      fd.append(`values[${i}][content]`, n.content);
-      if (n.file) fd.append(`file${i}`, n.file);
+      fd.append(`values[${i}][title]`, n.title);
+      fd.append(`values[${i}][link]`, n.link);
+      if (n.file) {
+        fd.append(`files`, n.file); // CORREÇÃO: enviar como 'files'
+      }
     });
     fd.append("id", exists.id);
 
@@ -131,6 +135,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
 
     const updated: FormDataType = await res.json();
     setExists(updated);
+    // CORREÇÃO: usar 'image' em vez de 'imageUrl'
     setNewsList(updated.values.map(v => ({ ...v, file: null })));
   };
 
@@ -158,7 +163,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
 
     try {
       const filteredList = newsList.filter(
-        n => n.name.trim() || n.role.trim() || n.fallback.trim() || n.content.trim() || n.file || n.avatar
+        n => n.fallback.trim() || n.title.trim() || n.file || n.link.trim() || n.image
       );
 
       if (!filteredList.length) {
@@ -172,12 +177,12 @@ export default function NewsPage({ type = "news" }: { type: string }) {
       } else {
         const fd = new FormData();
         filteredList.forEach((n, i) => {
-          fd.append(`values[${i}][name]`, n.name);
-          fd.append(`values[${i}][role]`, n.role);
-          fd.append(`values[${i}][avatar]`, n.avatar);
           fd.append(`values[${i}][fallback]`, n.fallback);
-          fd.append(`values[${i}][content]`, n.content);
-          if (n.file) fd.append(`file${i}`, n.file);
+          fd.append(`values[${i}][title]`, n.title);
+          fd.append(`values[${i}][link]`, n.link);
+          if (n.file) {
+            fd.append(`files`, n.file); // CORREÇÃO: enviar como 'files'
+          }
         });
 
         const res = await fetch(`/api/form/${type}`, {
@@ -192,6 +197,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
 
         const created: FormDataType = await res.json();
         setExists(created);
+        // CORREÇÃO: usar 'image' em vez de 'imageUrl'
         setNewsList(created.values.map(v => ({ ...v, file: null })));
       }
 
@@ -218,10 +224,10 @@ export default function NewsPage({ type = "news" }: { type: string }) {
             </div>
           </div>
           <h1 className="text-4xl font-bold text-[#0C8BD2] bg-clip-text">
-            {exists ? "Editar Notícias" : "Criar Notícias"}
+            {exists ? "Editar Newsletter" : "Criar Newsletter"}
           </h1>
           <p className="text-zinc-600 dark:text-zinc-400 mt-2">
-            Gerencie as notícias e artigos da sua empresa
+            Gerencie a newsletter da sua empresa
           </p>
         </motion.div>
 
@@ -230,6 +236,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
             <AnimatePresence>
               {newsList.map((news, index) => {
                 const imageUrl = getImageUrl(news);
+                const hasImage = !!news.image || !!news.file;
 
                 return (
                   <motion.div
@@ -248,7 +255,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
                           </span>
                         </div>
                         <h3 className="font-semibold text-zinc-900 dark:text-white">
-                          Notícia #{index + 1}
+                          Newsletter #{index + 1}
                         </h3>
                       </div>
                       
@@ -268,31 +275,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Nome do Autor
-                          </label>
-                          <Input
-                            type="text"
-                            placeholder="Nome do autor..."
-                            value={news.name}
-                            onChange={(e: any) => handleChange(index, "name", e.target.value)}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Cargo/Função
-                          </label>
-                          <Input
-                            type="text"
-                            placeholder="Cargo ou função do autor..."
-                            value={news.role}
-                            onChange={(e: any) => handleChange(index, "role", e.target.value)}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Texto Alternativo
+                            Texto Alternativo para a imagem
                           </label>
                           <Input
                             type="text"
@@ -301,24 +284,24 @@ export default function NewsPage({ type = "news" }: { type: string }) {
                             onChange={(e: any) => handleChange(index, "fallback", e.target.value)}
                           />
                         </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                            Título
+                          </label>
+                          <Input
+                            type="text"
+                            placeholder="Título para a newsletter"
+                            value={news.title}
+                            onChange={(e: any) => handleChange(index, "title", e.target.value)}
+                          />
+                        </div>
                       </div>
 
                       <div className="space-y-4">
                         <div>
                           <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Conteúdo da Notícia
-                          </label>
-                          <TextArea
-                            placeholder="Escreva o conteúdo da notícia..."
-                            value={news.content}
-                            onChange={(e: any) => handleChange(index, "content", e.target.value)}
-                            rows={6}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Avatar/Imagem
+                            Imagem
                           </label>
                           
                           {imageUrl && (
@@ -335,9 +318,9 @@ export default function NewsPage({ type = "news" }: { type: string }) {
                                   height={100}
                                   src={imageUrl}
                                   alt="Preview"
-                                  className="h-32 w-32 object-cover rounded-full border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-green-500 transition-all duration-200"
+                                  className="h-32 w-32 object-cover rounded-lg border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-green-500 transition-all duration-200"
                                 />
-                                <div className="absolute inset-0 bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-full flex items-center justify-center">
+                                <div className="absolute inset-0 bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
                                   <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-sm bg-black bg-opacity-50 px-3 py-1 rounded-lg">
                                     Ampliar
                                   </span>
@@ -356,16 +339,28 @@ export default function NewsPage({ type = "news" }: { type: string }) {
                               />
                               <div className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-750 transition-all duration-200 flex items-center justify-center gap-2 text-zinc-600 dark:text-zinc-400">
                                 <ImageIcon className="w-5 h-5" />
-                                {news.avatar && !news.file ? "Alterar Imagem" : "Selecionar Avatar"}
+                                {hasImage && !news.file ? "Alterar Imagem" : "Selecionar Imagem"}
                               </div>
                             </label>
                           </div>
                           
                           <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-                            {news.avatar && !news.file
+                            {hasImage && !news.file
                               ? "Imagem atual do servidor. Selecione um novo arquivo para substituir."
-                              : "Formatos suportados: JPG, PNG, WEBP. Tamanho recomendado: 1:1"}
+                              : "Formatos suportados: JPG, PNG, WEBP."}
                           </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                            Link da Newsletter
+                          </label>
+                          <Input
+                            type="text"
+                            placeholder="https://exemplo.com/newsletter"
+                            value={news.link}
+                            onChange={(e: any) => handleChange(index, "link", e.target.value)}
+                          />
                         </div>
                       </div>
                     </div>
@@ -382,7 +377,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
                 className="flex-1"
               >
                 <Plus className="w-5 h-5" />
-                Adicionar Nova Notícia
+                Adicionar Nova Newsletter
               </Button>
 
               <Button
@@ -391,7 +386,7 @@ export default function NewsPage({ type = "news" }: { type: string }) {
                 className="flex-1"
               >
                 <Save className="w-5 h-5" />
-                {exists ? "Atualizar Notícias" : "Criar Notícias"}
+                {exists ? "Atualizar Newsletters" : "Criar Newsletters"}
               </Button>
             </div>
           </form>
