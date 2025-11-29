@@ -56,7 +56,7 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
             fallback: n.fallback || "",
             title: n.title || "",
             file: null,
-            image: n.image || "", // CORREÇÃO: mudado de imageUrl para image
+            image: n.image || "",
             link: n.link || ""
           }));
 
@@ -88,10 +88,6 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
   const handleFileChange = (index: number, file: File | null) => {
     const newList = [...newsList];
     newList[index].file = file;
-    // Limpa a imagem do servidor quando um novo arquivo é selecionado
-    if (file) {
-      newList[index].image = "";
-    }
     setNewsList(newList);
   };
 
@@ -100,7 +96,11 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
       return URL.createObjectURL(news.file);
     }
     if (news.image) {
-      return news.image;
+      if (news.image.startsWith('http') || news.image.startsWith('//')) {
+        return news.image;
+      } else {
+        return `https://mavellium.com.br${news.image.startsWith('/') ? '' : '/'}${news.image}`;
+      }
     }
     return "";
   };
@@ -113,15 +113,32 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
     );
 
     const fd = new FormData();
+    
+    fd.append("id", exists.id);
+    
     filteredList.forEach((n, i) => {
       fd.append(`values[${i}][fallback]`, n.fallback);
       fd.append(`values[${i}][title]`, n.title);
       fd.append(`values[${i}][link]`, n.link);
+      fd.append(`values[${i}][image]`, n.image || "");
+      
+      // CORREÇÃO: Enviar arquivo com o nome correto que a API espera
       if (n.file) {
-        fd.append(`files`, n.file); // CORREÇÃO: enviar como 'files'
+        fd.append(`file${i}`, n.file); // Mudado de 'files' para 'file${i}'
+        console.log(`Enviando arquivo file${i}:`, n.file.name);
       }
     });
-    fd.append("id", exists.id);
+
+    console.log('Enviando para atualização:', {
+      id: exists.id,
+      values: filteredList.map(n => ({
+        fallback: n.fallback,
+        title: n.title,
+        link: n.link,
+        image: n.image || "",
+        hasFile: !!n.file
+      }))
+    });
 
     const res = await fetch(`/api/form/${type}`, {
       method: "PUT",
@@ -134,8 +151,8 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
     }
 
     const updated: FormDataType = await res.json();
+    console.log('Resposta da atualização:', updated);
     setExists(updated);
-    // CORREÇÃO: usar 'image' em vez de 'imageUrl'
     setNewsList(updated.values.map(v => ({ ...v, file: null })));
   };
 
@@ -167,7 +184,7 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
       );
 
       if (!filteredList.length) {
-        setErrorMsg("Nenhuma notícia válida para enviar.");
+        setErrorMsg("Nenhuma newsletter válida para enviar.");
         setLoading(false);
         return;
       }
@@ -176,13 +193,28 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
         await updateNews(filteredList);
       } else {
         const fd = new FormData();
+        
         filteredList.forEach((n, i) => {
           fd.append(`values[${i}][fallback]`, n.fallback);
           fd.append(`values[${i}][title]`, n.title);
           fd.append(`values[${i}][link]`, n.link);
+          fd.append(`values[${i}][image]`, n.image || "");
+          
+          // CORREÇÃO: Enviar arquivo com o nome correto que a API espera
           if (n.file) {
-            fd.append(`files`, n.file); // CORREÇÃO: enviar como 'files'
+            fd.append(`file${i}`, n.file); // Mudado de 'files' para 'file${i}'
+            console.log(`Enviando arquivo file${i} para criação:`, n.file.name);
           }
+        });
+
+        console.log('Enviando para criação:', {
+          values: filteredList.map(n => ({
+            fallback: n.fallback,
+            title: n.title,
+            link: n.link,
+            image: n.image || "",
+            hasFile: !!n.file
+          }))
         });
 
         const res = await fetch(`/api/form/${type}`, {
@@ -196,14 +228,15 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
         }
 
         const created: FormDataType = await res.json();
+        console.log('Resposta da criação:', created);
         setExists(created);
-        // CORREÇÃO: usar 'image' em vez de 'imageUrl'
         setNewsList(created.values.map(v => ({ ...v, file: null })));
       }
 
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: any) {
+      console.error('Erro no submit:', err);
       setErrorMsg(err.message);
     } finally {
       setLoading(false);
@@ -287,12 +320,14 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
                                 className="relative inline-block cursor-pointer group"
                                 onClick={() => setExpandedImage(imageUrl)}
                               >
-                                <Image
-                                  width={100}
-                                  height={100}
+                                <img
                                   src={imageUrl}
                                   alt="Preview"
                                   className="h-32 w-32 object-cover rounded-lg border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-green-500 transition-all duration-200"
+                                  onError={(e) => {
+                                    console.error('Erro ao carregar imagem:', imageUrl);
+                                    e.currentTarget.style.display = 'none';
+                                  }}
                                 />
                                 <div className="absolute inset-0 bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
                                   <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-sm bg-black bg-opacity-50 px-3 py-1 rounded-lg">
@@ -335,8 +370,6 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
                             onChange={(e: any) => handleChange(index, "fallback", e.target.value)}
                           />
                         </div>
-
-
                       </div>
 
                       <div className="space-y-4">
@@ -445,12 +478,14 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
               >
                 <X className="w-5 h-5" />
               </Button>
-              <Image
+              <img
                 src={expandedImage}
-                width={500}
-                height={500}
                 alt="Preview expandido"
                 className="max-w-full max-h-[80vh] object-contain rounded-2xl"
+                onError={(e) => {
+                  console.error('Erro ao carregar imagem expandida:', expandedImage);
+                  e.currentTarget.style.display = 'none';
+                }}
               />
             </motion.div>
           </motion.div>
