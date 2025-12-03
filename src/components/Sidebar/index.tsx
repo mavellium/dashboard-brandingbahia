@@ -105,7 +105,7 @@ export default function Sidebar() {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.8 }}
           onClick={toggleSidebar}
-          className="fixed top-6 left-6 z-50 bg-[#0C8BD2] text-white p-3 rounded-2xl shadow-lg hover:bg-[#0A7AB8] transition-all duration-300 hover:scale-105 shadow-blue-500/25"
+          className="fixed top-6 left-6 z-50 bg-[#0C8BD2] text-white p-3 rounded-2xl shadow-lg hover:bg-[#0A7AB8] transition-all duration-300 hover:scale-105 shadow-blue-500/25 z-[99999999999]"
         >
           <Menu size={24} />
         </motion.button>
@@ -119,7 +119,7 @@ export default function Sidebar() {
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.8 }}
           onClick={toggleSidebar}
-          className="fixed top-6 z-50 bg-[#0C8BD2] text-white p-3 rounded-2xl shadow-lg hover:bg-[#0A7AB8] transition-all duration-300 hover:scale-105 shadow-blue-500/25"
+          className="fixed top-6 z-50 bg-[#0C8BD2] text-white p-3 rounded-2xl shadow-lg hover:bg-[#0A7AB8] transition-all duration-300 hover:scale-105 shadow-blue-500/25 z-[99999999999]"
           style={{ 
             left: '6rem',
             transform: 'translateX(-50%)'
@@ -150,7 +150,7 @@ export default function Sidebar() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={closeSidebar}
-            className="fixed inset-0 bg-[#00000073] bg-opacity-30 z-30 hidden lg:block"
+            className="fixed inset-0 bg-[#00000073] bg-opacity-30 z-30 hidden lg:block z-[999999]"
           />
         )}
       </AnimatePresence>
@@ -182,6 +182,7 @@ export default function Sidebar() {
               border-r border-gray-700
               ${sidebarWidth}
               transition-all duration-250
+              z-[99999999999999999999]
             `}
           >
             {/* Header */}
