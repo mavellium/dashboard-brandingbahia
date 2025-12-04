@@ -11,7 +11,8 @@ import {
   HelpCircle,
   X,
   ArrowUpDown,
-  XCircle
+  XCircle,
+  AlertTriangle
 } from "lucide-react";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
@@ -24,6 +25,13 @@ interface FAQ {
   answer: string;
 }
 
+interface DeleteModalState {
+  isOpen: boolean;
+  type: 'single' | 'all' | null;
+  index: number | null;
+  question: string;
+}
+
 export default function CreateFAQ() {
   const [faqList, setFaqList] = useState<FAQ[]>([{ question: "", answer: "" }]);
   const [recordId, setRecordId] = useState<string | null>(null);
@@ -33,6 +41,12 @@ export default function CreateFAQ() {
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [showValidation, setShowValidation] = useState(false);
+  const [deleteModal, setDeleteModal] = useState<DeleteModalState>({
+    isOpen: false,
+    type: null,
+    index: null,
+    question: ''
+  });
   
   const newFaqRef = useRef<HTMLDivElement>(null);
 
@@ -132,12 +146,53 @@ export default function CreateFAQ() {
     }, 100);
   };
 
-  const removeFaq = (index: number) => {
-    if (faqList.length === 1) {
+  // Funções para abrir modais de confirmação
+  const openDeleteSingleModal = (index: number, question: string) => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'single',
+      index,
+      question: question || "FAQ sem título"
+    });
+  };
+
+  const openDeleteAllModal = () => {
+    setDeleteModal({
+      isOpen: true,
+      type: 'all',
+      index: null,
+      question: ''
+    });
+  };
+
+  // Função para fechar modal
+  const closeDeleteModal = () => {
+    setDeleteModal({
+      isOpen: false,
+      type: null,
+      index: null,
+      question: ''
+    });
+  };
+
+  // Função para confirmar exclusão
+  const confirmDelete = () => {
+    if (deleteModal.type === 'all') {
+      // Limpar todas as FAQs
       setFaqList([{ question: "", answer: "" }]);
-      return;
+      setSearch("");
+      setSortOrder('asc');
+      setShowValidation(false);
+    } else if (deleteModal.type === 'single' && deleteModal.index !== null) {
+      // Remover FAQ individual
+      if (faqList.length === 1) {
+        setFaqList([{ question: "", answer: "" }]);
+      } else {
+        setFaqList(faqList.filter((_, i) => i !== deleteModal.index));
+      }
     }
-    setFaqList(faqList.filter((_, i) => i !== index));
+    
+    closeDeleteModal();
   };
 
   const handleChange = (index: number, field: keyof FAQ, value: string) => {
@@ -150,15 +205,6 @@ export default function CreateFAQ() {
       if (field === 'question' && value.trim() !== "") {
         setShowValidation(false);
       }
-    }
-  };
-
-  const clearAll = () => {
-    if (window.confirm("Tem certeza que deseja limpar todas as FAQs?")) {
-      setFaqList([{ question: "", answer: "" }]);
-      setSearch("");
-      setSortOrder('asc');
-      setShowValidation(false);
     }
   };
 
@@ -221,20 +267,22 @@ export default function CreateFAQ() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-900 dark:to-zinc-800 p-4 md:p-6">
-      <div className="max-w-4xl p-0 mx-auto py-6 md:py-8">
+      <div className="max-w-4xl mx-auto pb-6 md:pb-8">
         {/* Header */}
-        <div className="text-center mb-8">
-          <div className="flex items-center justify-center gap-3 mb-4">
+        <div className="text-center mb-8 flex flex-wrap gap-5">
+          <div className="flex items-center justify-center gap-3">
             <div className="p-3 bg-[#0C8BD2] rounded-2xl">
               <HelpCircle className="w-8 h-8 text-white" />
             </div>
           </div>
-          <h1 className="text-3xl font-bold text-[#0C8BD2]">
-            {recordId ? "Gerenciar FAQ" : "Criar FAQ"}
-          </h1>
-          <p className="text-zinc-600 dark:text-zinc-400 mt-2">
-            Crie e gerencie suas perguntas frequentes
-          </p>
+          <div className="flex flex-wrap flex-col flex-start justify-start text-start">
+            <h1 className="text-3xl font-bold text-[#0C8BD2]">
+              {recordId ? "Gerenciar FAQ" : "Criar FAQ"}
+            </h1>
+            <p className="text-zinc-600 dark:text-zinc-400 mt-1">
+              Crie e gerencie suas perguntas frequentes
+            </p>
+          </div>
         </div>
 
         {/* Controles */}
@@ -338,7 +386,7 @@ export default function CreateFAQ() {
                           <Button
                             type="button"
                             variant="danger"
-                            onClick={() => removeFaq(originalIndex)}
+                            onClick={() => openDeleteSingleModal(originalIndex, faq.question)}
                             className="!p-2"
                           >
                             <Trash2 className="w-4 h-4" />
@@ -383,7 +431,7 @@ export default function CreateFAQ() {
 
         {/* Barra Fixa de Botões */}
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-blue-50/90 to-transparent dark:from-zinc-900/90 backdrop-blur-sm pt-4">
-          <div className="max-w-4xl pt-0 mx-auto px-4 md:px-6 pb-4">
+          <div className="max-w-4xl mx-auto px-4 md:px-6 pb-4">
             <Card className="shadow-xl border-2 border-blue-200 dark:border-blue-900/50">
               <div className="p-4">
                 <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
@@ -400,7 +448,7 @@ export default function CreateFAQ() {
                     <Button
                       type="button"
                       variant="danger"
-                      onClick={clearAll}
+                      onClick={openDeleteAllModal}
                       className="flex-1 sm:flex-none justify-center"
                     >
                       <X className="w-4 h-4 mr-2" />
@@ -434,6 +482,54 @@ export default function CreateFAQ() {
             </Card>
           </div>
         </div>
+
+        {/* Modal de Confirmação para Exclusão */}
+        {deleteModal.isOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="w-full max-w-md"
+            >
+              <Card className="p-6 border-red-200 dark:border-red-900">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="p-2 bg-red-100 dark:bg-red-900/30 rounded-lg">
+                    <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-zinc-900 dark:text-white">
+                    {deleteModal.type === 'all' ? 'Limpar todas as FAQs' : 'Excluir FAQ'}
+                  </h3>
+                </div>
+                
+                <p className="text-zinc-600 dark:text-zinc-400 mb-6">
+                  {deleteModal.type === 'all' 
+                    ? `Tem certeza que deseja limpar todas as ${faqList.length} FAQs? Esta ação não pode ser desfeita.`
+                    : `Tem certeza que deseja excluir a FAQ "${deleteModal.question.substring(0, 50)}${deleteModal.question.length > 50 ? '...' : ''}"? Esta ação não pode ser desfeita.`
+                  }
+                </p>
+                
+                <div className="flex gap-3 justify-end">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={closeDeleteModal}
+                    className="bg-[#0C8BD2] hover:bg-blue-600 text-white border-blue-500"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={confirmDelete}
+                  >
+                    {deleteModal.type === 'all' ? 'Limpar Tudo' : 'Excluir'}
+                  </Button>
+                </div>
+              </Card>
+            </motion.div>
+          </div>
+        )}
 
         {/* Mensagens de Feedback */}
         {success && (
