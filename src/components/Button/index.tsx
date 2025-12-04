@@ -5,6 +5,7 @@ export const Button = ({
   children, 
   variant = "primary",
   loading = false,
+  disabled = false,
   className = "",
   ...props 
 }: ButtonProps) => {

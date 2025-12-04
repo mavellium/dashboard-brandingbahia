@@ -10,7 +10,8 @@ import {
   Search,
   HelpCircle,
   X,
-  ArrowUpDown
+  ArrowUpDown,
+  XCircle
 } from "lucide-react";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
@@ -31,6 +32,7 @@ export default function CreateFAQ() {
   const [errorMsg, setErrorMsg] = useState("");
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [showValidation, setShowValidation] = useState(false);
   
   const newFaqRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +69,14 @@ export default function CreateFAQ() {
     loadData();
   }, []);
 
+  // Verificar se pode adicionar nova FAQ
+  const canAddNewFaq = () => {
+    if (search) return false; // Não pode adicionar se há texto na busca
+    
+    const lastFaq = faqList[faqList.length - 1];
+    return lastFaq.question.trim() !== "" && lastFaq.answer.trim() !== "";
+  };
+
   // Filtrar e ordenar FAQs
   const filteredFaqs = useMemo(() => {
     // Primeiro filtramos
@@ -89,12 +99,29 @@ export default function CreateFAQ() {
   }, [faqList, search, sortOrder]);
 
   const addFaq = () => {
+    // Verificação de busca
+    if (search) {
+      setErrorMsg("Limpe a busca antes de adicionar uma nova FAQ.");
+      setTimeout(() => setErrorMsg(""), 3000);
+      return;
+    }
+
+    // Verificação de preenchimento do último card
+    const lastFaq = faqList[faqList.length - 1];
+    if (lastFaq.question.trim() === "" || lastFaq.answer.trim() === "") {
+      setShowValidation(true);
+      setErrorMsg("Complete a FAQ atual antes de adicionar uma nova.");
+      setTimeout(() => setErrorMsg(""), 3000);
+      return;
+    }
+
     const newFaq = { 
       id: `faq-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       question: "", 
       answer: "" 
     };
     setFaqList([...faqList, newFaq]);
+    setShowValidation(false);
     
     // Scroll para nova FAQ
     setTimeout(() => {
@@ -117,12 +144,27 @@ export default function CreateFAQ() {
     const newList = [...faqList];
     newList[index][field] = value ?? "";
     setFaqList(newList);
+    
+    // Remover validação quando o usuário começar a digitar
+    if (showValidation && index === faqList.length - 1) {
+      if (field === 'question' && value.trim() !== "") {
+        setShowValidation(false);
+      }
+    }
   };
 
   const clearAll = () => {
     if (window.confirm("Tem certeza que deseja limpar todas as FAQs?")) {
       setFaqList([{ question: "", answer: "" }]);
+      setSearch("");
+      setSortOrder('asc');
+      setShowValidation(false);
     }
+  };
+
+  const clearFilters = () => {
+    setSearch("");
+    setSortOrder('asc');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -130,13 +172,14 @@ export default function CreateFAQ() {
     setLoading(true);
     setSuccess(false);
     setErrorMsg("");
+    setShowValidation(false);
 
     const filtered = faqList.filter(
-      f => f.question.trim() || f.answer.trim()
+      f => f.question.trim() && f.answer.trim()
     );
 
     if (!filtered.length) {
-      setErrorMsg("Adicione ao menos uma pergunta.");
+      setErrorMsg("Adicione ao menos uma FAQ completa (com pergunta e resposta).");
       setLoading(false);
       return;
     }
@@ -178,7 +221,7 @@ export default function CreateFAQ() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-zinc-900 dark:to-zinc-800 p-4 md:p-6">
-      <div className="max-w-4xl mx-auto py-6 md:py-8">
+      <div className="max-w-4xl p-0 mx-auto py-6 md:py-8">
         {/* Header */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center gap-3 mb-4">
@@ -218,20 +261,30 @@ export default function CreateFAQ() {
                   <ArrowUpDown className="w-4 h-4 mr-2" />
                   {sortOrder === 'asc' ? 'Antigas ↑' : 'Recentes ↓'}
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={clearAll}
-                  className="flex-1 sm:flex-none"
-                >
-                  <X className="w-4 h-4 mr-2" />
-                  Limpar
-                </Button>
+                {(search || sortOrder === 'desc') && (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={clearFilters}
+                    className="flex-1 sm:flex-none"
+                  >
+                    <XCircle className="w-4 h-4 mr-2" />
+                    Limpar Filtro
+                  </Button>
+                )}
               </div>
             </div>
-            <div className="mt-4 text-sm text-zinc-500 dark:text-zinc-400 flex justify-between">
-              <span>Total: {faqList.length}</span>
-              <span>Mostrando: {filteredFaqs.length}</span>
+            <div className="mt-4 text-sm text-zinc-500 dark:text-zinc-400 flex justify-between items-center">
+              <div>
+                <span>Total: {faqList.length}</span>
+                <span className="mx-2">•</span>
+                <span>Mostrando: {filteredFaqs.length}</span>
+              </div>
+              {search && (
+                <div className="text-amber-600 dark:text-amber-400 text-xs">
+                  ⓘ Busca ativa - não é possível adicionar nova FAQ
+                </div>
+              )}
             </div>
           </Card>
         </div>
@@ -239,7 +292,7 @@ export default function CreateFAQ() {
         {/* Lista de FAQs */}
         <div className="space-y-4 pb-32">
           <form onSubmit={handleSubmit}>
-            {filteredFaqs.map((faq, filteredIndex) => {
+            {filteredFaqs.map((faq) => {
               // Encontrar o índice original na lista completa
               const originalIndex = faqList.findIndex(f => f.id === faq.id);
               const hasQuestion = faq.question.trim() !== "";
@@ -252,7 +305,9 @@ export default function CreateFAQ() {
                   key={faq.id || originalIndex} 
                   ref={isLastAndEmpty ? newFaqRef : null}
                 >
-                  <Card className="mb-4 overflow-hidden">
+                  <Card className={`mb-4 overflow-hidden transition-all duration-300 ${
+                    isLastInOriginalList && showValidation && !hasQuestion ? 'ring-2 ring-red-500' : ''
+                  }`}>
                     <div className="p-4 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
@@ -268,11 +323,15 @@ export default function CreateFAQ() {
                             </span>
                           </div>
                           <div className="text-sm text-zinc-500">
-                            <div>Posição original: {originalIndex + 1}</div>
-                            <div>
+                            <div className="font-medium">
                               {hasQuestion ? '✓ Pergunta' : 'Sem pergunta'} • 
                               {hasAnswer ? ' ✓ Resposta' : ' Sem resposta'}
                             </div>
+                            {isLastInOriginalList && showValidation && !hasQuestion && (
+                              <div className="text-red-500 text-xs mt-1">
+                                ⚠ Complete esta FAQ antes de adicionar outra
+                              </div>
+                            )}
                           </div>
                         </div>
                         {faqList.length > 1 && (
@@ -324,7 +383,7 @@ export default function CreateFAQ() {
 
         {/* Barra Fixa de Botões */}
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-blue-50/90 to-transparent dark:from-zinc-900/90 backdrop-blur-sm pt-4">
-          <div className="max-w-4xl mx-auto px-4 md:px-6 pb-4">
+          <div className="max-w-4xl pt-0 mx-auto px-4 md:px-6 pb-4">
             <Card className="shadow-xl border-2 border-blue-200 dark:border-blue-900/50">
               <div className="p-4">
                 <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
@@ -340,8 +399,19 @@ export default function CreateFAQ() {
                   <div className="flex gap-3 w-full sm:w-auto">
                     <Button
                       type="button"
+                      variant="danger"
+                      onClick={clearAll}
+                      className="flex-1 sm:flex-none justify-center"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Limpar Tudo
+                    </Button>
+                    
+                    <Button
+                      type="button"
                       variant="secondary"
                       onClick={addFaq}
+                      disabled={!!search || !canAddNewFaq()}
                       className="flex-1 sm:flex-none justify-center"
                     >
                       <Plus className="w-4 h-4 mr-2" />

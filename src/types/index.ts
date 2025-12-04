@@ -36,6 +36,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   loading?: boolean;
   className?: string;
   children: React.ReactNode;
+  disabled?: boolean;
 }
 
 export interface CardProps {
