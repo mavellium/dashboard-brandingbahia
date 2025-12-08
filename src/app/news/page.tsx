@@ -1,19 +1,20 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  Plus,
-  Trash2,
-  Save,
-  Image as ImageIcon,
-  X,
-  FileText,
-} from "lucide-react";
+import { useListManagement } from "@/hooks/useListManagement";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
 import { Button } from "@/components/Button";
+import { FileText, X } from "lucide-react";
+import { ManageLayout } from "@/components/Manage/ManageLayout";
+import { SearchSortBar } from "@/components/Manage/SearchSortBar";
+import { ItemHeader } from "@/components/Manage/ItemHeader";
+import { FixedActionBar } from "@/components/Manage/FixedActionBar";
+import { DeleteConfirmationModal } from "@/components/Manage/DeleteConfirmationModal";
+import { FeedbackMessages } from "@/components/Manage/FeedbackMessages";
+import { ImageUpload } from "@/components/Manage/ImageUpload";
 import Image from "next/image";
 
 interface NewsItem {
@@ -25,59 +26,110 @@ interface NewsItem {
   link: string;
 }
 
-interface FormDataType {
-  id: string;
-  type: string;
-  values: NewsItem[];
-}
-
 export default function NewsPage({ type = "newsletter" }: { type: string }) {
-  const [newsList, setNewsList] = useState<NewsItem[]>([
-    { fallback: "", title: "", file: null, link: "" },
-  ]);
-  const [exists, setExists] = useState<FormDataType | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [errorMsg, setErrorMsg] = useState("");
+  const defaultNews = useMemo(() => ({ 
+    fallback: "", 
+    title: "", 
+    file: null, 
+    link: "", 
+    image: "" 
+  }), []);
+
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const res = await fetch(`/api/form/${type}`);
-        if (!res.ok) return;
+  const {
+    list: newsList,
+    setList: setNewsList,
+    exists,
+    loading,
+    setLoading,
+    success,
+    setSuccess,
+    errorMsg,
+    setErrorMsg,
+    search,
+    setSearch,
+    sortOrder,
+    setSortOrder,
+    showValidation,
+    filteredItems: filteredNews,
+    deleteModal,
+    newItemRef,
+    canAddNewItem,
+    completeCount,
+    addItem,
+    openDeleteSingleModal,
+    openDeleteAllModal,
+    closeDeleteModal,
+    confirmDelete,
+    clearFilters,
+  } = useListManagement<NewsItem>({
+    type,
+    apiPath: `/api/form/${type}`,
+    defaultItem: defaultNews,
+    validationFields: ["title", "fallback"]
+  });
 
-        const data: FormDataType[] = await res.json();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setLoading(true);
+    setSuccess(false);
+    setErrorMsg("");
 
-        if (data.length) {
-          const item = data[0];
-          const safeList = item.values.map((n) => ({
-            id: n.id,
-            fallback: n.fallback || "",
-            title: n.title || "",
-            file: null,
-            image: n.image || "",
-            link: n.link || ""
-          }));
+    try {
+      const filteredList = newsList.filter(
+        n => n.title.trim() && n.fallback.trim()
+      );
 
-          setExists(item);
-          setNewsList(safeList);
-        }
-      } catch (e) {
-        console.error(e);
+      if (!filteredList.length) {
+        setErrorMsg("Adicione ao menos uma newsletter completa (com título e texto alternativo).");
+        setLoading(false);
+        return;
       }
+
+      if (exists) {
+        await updateNews(filteredList);
+      } else {
+        const fd = new FormData();
+        
+        filteredList.forEach((n, i) => {
+          fd.append(`values[${i}][fallback]`, n.fallback);
+          fd.append(`values[${i}][title]`, n.title);
+          fd.append(`values[${i}][link]`, n.link);
+          fd.append(`values[${i}][image]`, n.image || "");
+          
+          if (n.file) {
+            fd.append(`file${i}`, n.file);
+          }
+        });
+
+        const res = await fetch(`/api/form/${type}`, {
+          method: "POST",
+          body: fd,
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json();
+          throw new Error(errorData.error || "Falha ao salvar dados");
+        }
+
+        const created = await res.json();
+        setNewsList(created.values.map((v: any, index: number) => ({ 
+          ...v, 
+          id: v.id || `news-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${index}`,
+          file: null 
+        })));
+      }
+
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: any) {
+      console.error('Erro no submit:', err);
+      setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
     }
-
-    loadData();
-  }, [type]);
-
-  const addNews = () =>
-    setNewsList([...newsList, {
-      fallback: "",
-      title: "",
-      file: null,
-      link: ""
-    }]);
+  };
 
   const handleChange = (index: number, field: keyof NewsItem, value: any) => {
     const newList = [...newsList];
@@ -122,22 +174,9 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
       fd.append(`values[${i}][link]`, n.link);
       fd.append(`values[${i}][image]`, n.image || "");
       
-      // CORREÇÃO: Enviar arquivo com o nome correto que a API espera
       if (n.file) {
-        fd.append(`file${i}`, n.file); // Mudado de 'files' para 'file${i}'
-        console.log(`Enviando arquivo file${i}:`, n.file.name);
+        fd.append(`file${i}`, n.file);
       }
-    });
-
-    console.log('Enviando para atualização:', {
-      id: exists.id,
-      values: filteredList.map(n => ({
-        fallback: n.fallback,
-        title: n.title,
-        link: n.link,
-        image: n.image || "",
-        hasFile: !!n.file
-      }))
     });
 
     const res = await fetch(`/api/form/${type}`, {
@@ -150,310 +189,207 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
       throw new Error(errorData.error || "Falha ao atualizar dados");
     }
 
-    const updated: FormDataType = await res.json();
-    console.log('Resposta da atualização:', updated);
-    setExists(updated);
-    setNewsList(updated.values.map(v => ({ ...v, file: null })));
+    const updated = await res.json();
+    return updated;
   };
 
-  const handleRemoveNews = async (index: number) => {
-    if (newsList.length === 1) return;
-
-    const newList = newsList.filter((_, i) => i !== index);
-    setNewsList(newList);
-
-    if (!exists) return;
-
-    try {
-      await updateNews(newList);
-    } catch (err: any) {
-      console.error("Erro ao remover notícia:", err);
-      setErrorMsg(err.message);
-    }
+  // Função wrapper para o submit sem parâmetros
+  const handleSubmitWrapper = () => {
+    handleSubmit();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setErrorMsg("");
-    setSuccess(false);
-
-    try {
-      const filteredList = newsList.filter(
-        n => n.fallback.trim() || n.title.trim() || n.file || n.link.trim() || n.image
+  // Componente de preview de imagem otimizado
+  const ImagePreview = ({ imageUrl, alt = "Preview" }: { imageUrl: string, alt?: string }) => {
+    // Verificar se é uma blob URL (upload) ou URL externa
+    const isBlobUrl = imageUrl.startsWith('blob:');
+    
+    if (isBlobUrl) {
+      // Para blob URLs, use img com tratamento de erro
+      return (
+        <img
+          src={imageUrl}
+          alt={alt}
+          className="h-32 w-32 object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-blue-500 transition-all duration-200"
+          onError={(e) => {
+            console.error('Erro ao carregar imagem:', imageUrl);
+            e.currentTarget.style.display = 'none';
+          }}
+        />
       );
-
-      if (!filteredList.length) {
-        setErrorMsg("Nenhuma newsletter válida para enviar.");
-        setLoading(false);
-        return;
-      }
-
-      if (exists) {
-        await updateNews(filteredList);
-      } else {
-        const fd = new FormData();
-        
-        filteredList.forEach((n, i) => {
-          fd.append(`values[${i}][fallback]`, n.fallback);
-          fd.append(`values[${i}][title]`, n.title);
-          fd.append(`values[${i}][link]`, n.link);
-          fd.append(`values[${i}][image]`, n.image || "");
-          
-          // CORREÇÃO: Enviar arquivo com o nome correto que a API espera
-          if (n.file) {
-            fd.append(`file${i}`, n.file); // Mudado de 'files' para 'file${i}'
-            console.log(`Enviando arquivo file${i} para criação:`, n.file.name);
-          }
-        });
-
-        console.log('Enviando para criação:', {
-          values: filteredList.map(n => ({
-            fallback: n.fallback,
-            title: n.title,
-            link: n.link,
-            image: n.image || "",
-            hasFile: !!n.file
-          }))
-        });
-
-        const res = await fetch(`/api/form/${type}`, {
-          method: "POST",
-          body: fd,
-        });
-
-        if (!res.ok) {
-          const errorData = await res.json();
-          throw new Error(errorData.error || "Falha ao salvar dados");
-        }
-
-        const created: FormDataType = await res.json();
-        console.log('Resposta da criação:', created);
-        setExists(created);
-        setNewsList(created.values.map(v => ({ ...v, file: null })));
-      }
-
-      setSuccess(true);
-      setTimeout(() => setSuccess(false), 3000);
-    } catch (err: any) {
-      console.error('Erro no submit:', err);
-      setErrorMsg(err.message);
-    } finally {
-      setLoading(false);
+    } else {
+      // Para URLs externas, use Image do Next.js com domínio configurado
+      return (
+        <Image
+          src={imageUrl}
+          alt={alt}
+          width={128}
+          height={128}
+          className="h-32 w-32 object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-blue-500 transition-all duration-200"
+          onError={(e) => {
+            console.error('Erro ao carregar imagem:', imageUrl);
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      );
     }
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-cyan-100 dark:from-zinc-900 dark:to-zinc-800 p-4">
-      <div className="max-w-6xl mx-auto py-8">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-8"
-        >
-          <div className="flex items-center justify-center gap-3 mb-4">
-            <div className="p-3 bg-[#0C8BD2] rounded-2xl">
-              <FileText className="w-8 h-8 text-white" />
-            </div>
-          </div>
-          <h1 className="text-4xl font-bold text-[#0C8BD2] bg-clip-text">
-            {exists ? "Editar Newsletter" : "Criar Newsletter"}
-          </h1>
-          <p className="text-zinc-600 dark:text-zinc-400 mt-2">
-            Gerencie as newsletter
-          </p>
-        </motion.div>
+    <ManageLayout
+      headerIcon={FileText}
+      title="Newsletter"
+      description="Crie e gerencie suas newsletters"
+      exists={!!exists}
+      itemName="Newsletter"
+    >
+      {/* Controles */}
+      <div className="mb-6 space-y-4">
+        <SearchSortBar
+          search={search}
+          setSearch={setSearch}
+          sortOrder={sortOrder}
+          setSortOrder={setSortOrder}
+          onClearFilters={clearFilters}
+          searchPlaceholder="Buscar newsletters..."
+          total={newsList.length}
+          showing={filteredNews.length}
+          searchActiveText="ⓘ Busca ativa - não é possível adicionar nova newsletter"
+        />
+      </div>
 
-        <Card className="p-6">
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <AnimatePresence>
-              {newsList.map((news, index) => {
-                const imageUrl = getImageUrl(news);
-                const hasImage = !!news.image || !!news.file;
+      {/* Lista de Newsletters */}
+      <div className="space-y-4 pb-32">
+        <form onSubmit={handleSubmit}>
+          <AnimatePresence>
+            {filteredNews.map((news: any) => {
+              const originalIndex = newsList.findIndex(n => n.id === news.id);
+              const hasTitle = news.title.trim() !== "";
+              const hasFallback = news.fallback.trim() !== "";
+              const hasLink = news.link.trim() !== "";
+              const hasImage = news.image?.trim() !== "" || news.file;
+              const isLastInOriginalList = originalIndex === newsList.length - 1;
+              const isLastAndEmpty = isLastInOriginalList && !hasTitle && !hasFallback;
+              const imageUrl = getImageUrl(news);
 
-                return (
-                  <motion.div
-                    key={index}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.3 }}
-                    className="p-6 bg-zinc-50 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700"
-                  >
-                    <div className="flex items-center justify-between mb-6">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-[#0C8BD2] rounded-full flex items-center justify-center">
-                          <span className="text-white font-semibold text-sm">
-                            {index + 1}
-                          </span>
-                        </div>
-                        <h3 className="font-semibold text-zinc-900 dark:text-white">
-                          Newsletter #{index + 1}
-                        </h3>
-                      </div>
-
-                      {newsList.length > 1 && (
-                        <Button
-                          type="button"
-                          variant="danger"
-                          onClick={() => handleRemoveNews(index)}
-                          className="!p-2 !rounded-lg"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Imagem
-                          </label>
-
-                          {imageUrl && (
-                            <div className="mb-4">
-                              <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-2">
-                                Preview:
-                              </p>
-                              <div
-                                className="relative inline-block cursor-pointer group"
-                                onClick={() => setExpandedImage(imageUrl)}
-                              >
-                                <img
-                                  src={imageUrl}
-                                  alt="Preview"
-                                  className="h-32 w-32 object-cover rounded-lg border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-green-500 transition-all duration-200"
-                                  onError={(e) => {
-                                    console.error('Erro ao carregar imagem:', imageUrl);
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                                <div className="absolute inset-0 bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-200 rounded-lg flex items-center justify-center">
-                                  <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-sm bg-black bg-opacity-50 px-3 py-1 rounded-lg">
-                                    Ampliar
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          <div className="flex items-center gap-4">
-                            <label className="flex-1 cursor-pointer">
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => handleFileChange(index, e.target.files?.[0] ?? null)}
-                                className="hidden"
-                              />
-                              <div className="w-full px-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-750 transition-all duration-200 flex items-center justify-center gap-2 text-zinc-600 dark:text-zinc-400">
-                                <ImageIcon className="w-5 h-5" />
-                                {hasImage && !news.file ? "Alterar Imagem" : "Selecionar Imagem"}
-                              </div>
+              return (
+                <div
+                  key={news.id || originalIndex}
+                  ref={isLastAndEmpty ? newItemRef : null}
+                >
+                  <Card className={`mb-4 overflow-hidden transition-all duration-300 ${
+                    isLastInOriginalList && showValidation && !hasTitle ? 'ring-2 ring-red-500' : ''
+                  }`}>
+                    <div className="p-4 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
+                      <ItemHeader
+                        index={originalIndex}
+                        fields={[
+                          { label: 'Título', hasValue: hasTitle },
+                          { label: 'Texto Alternativo', hasValue: hasFallback },
+                          { label: 'Link', hasValue: hasLink },
+                          { label: 'Imagem', hasValue: hasImage }
+                        ]}
+                        showValidation={showValidation}
+                        isLast={isLastInOriginalList}
+                        onDelete={() => openDeleteSingleModal(originalIndex, news.title)}
+                        showDelete={newsList.length > 1}
+                      />
+                      
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                              Imagem
                             </label>
+
+                            <ImageUpload
+                              imageUrl={imageUrl}
+                              hasImage={hasImage}
+                              file={news.file}
+                              onFileChange={(file) => handleFileChange(originalIndex, file)}
+                              onExpand={setExpandedImage}
+                              label="Imagem da Newsletter"
+                              altText="Preview da newsletter"
+                              imageInfo={hasImage && !news.file
+                                ? "Imagem atual do servidor. Selecione um novo arquivo para substituir."
+                                : "Formatos suportados: JPG, PNG, WEBP."}
+                              customPreview={imageUrl ? <ImagePreview imageUrl={imageUrl} /> : undefined}
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                              Texto Alternativo para a imagem
+                            </label>
+                            <Input
+                              type="text"
+                              placeholder="Texto alternativo para acessibilidade..."
+                              value={news.fallback}
+                              onChange={(e: any) => handleChange(originalIndex, "fallback", e.target.value)}
+                              autoFocus={isLastAndEmpty}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                              Título
+                            </label>
+                            <Input
+                              type="text"
+                              placeholder="Título para a newsletter"
+                              value={news.title}
+                              onChange={(e: any) => handleChange(originalIndex, "title", e.target.value)}
+                              className="font-medium"
+                            />
                           </div>
 
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-                            {hasImage && !news.file
-                              ? "Imagem atual do servidor. Selecione um novo arquivo para substituir."
-                              : "Formatos suportados: JPG, PNG, WEBP."}
-                          </p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Texto Alternativo para a imagem
-                          </label>
-                          <Input
-                            type="text"
-                            placeholder="Texto alternativo para acessibilidade..."
-                            value={news.fallback}
-                            onChange={(e: any) => handleChange(index, "fallback", e.target.value)}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-4">
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Título
-                          </label>
-                          <Input
-                            type="text"
-                            placeholder="Título para a newsletter"
-                            value={news.title}
-                            onChange={(e: any) => handleChange(index, "title", e.target.value)}
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                            Link da Newsletter
-                          </label>
-                          <Input
-                            type="text"
-                            placeholder="https://exemplo.com/newsletter"
-                            value={news.link}
-                            onChange={(e: any) => handleChange(index, "link", e.target.value)}
-                          />
+                          <div>
+                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                              Link da Newsletter
+                            </label>
+                            <Input
+                              type="text"
+                              placeholder="https://exemplo.com/newsletter"
+                              value={news.link}
+                              onChange={(e: any) => handleChange(originalIndex, "link", e.target.value)}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </motion.div>
-                );
-              })}
-            </AnimatePresence>
-
-            <div className="flex flex-col sm:flex-row gap-4 pt-6">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={addNews}
-                className="flex-1"
-              >
-                <Plus className="w-5 h-5" />
-                Adicionar Nova Newsletter
-              </Button>
-
-              <Button
-                type="submit"
-                loading={loading}
-                className="flex-1"
-              >
-                <Save className="w-5 h-5" />
-                {exists ? "Atualizar Newsletters" : "Criar Newsletters"}
-              </Button>
-            </div>
-          </form>
-
-          <AnimatePresence>
-            {success && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="mt-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl"
-              >
-                <p className="text-green-700 dark:text-green-400 font-semibold text-center">
-                  ✅ Dados salvos com sucesso!
-                </p>
-              </motion.div>
-            )}
-
-            {errorMsg && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
-                className="mt-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl"
-              >
-                <p className="text-red-700 dark:text-red-400 font-semibold text-center">
-                  {errorMsg}
-                </p>
-              </motion.div>
-            )}
+                  </Card>
+                </div>
+              );
+            })}
           </AnimatePresence>
-        </Card>
+        </form>
       </div>
+
+      {/* Componentes Fixos */}
+      <FixedActionBar
+        onDeleteAll={openDeleteAllModal}
+        onAddNew={() => addItem()}
+        onSubmit={handleSubmitWrapper}
+        isAddDisabled={!canAddNewItem}
+        isSaving={loading}
+        exists={!!exists}
+        completeCount={completeCount}
+        totalCount={newsList.length}
+        itemName="Newsletter"
+        icon={FileText}
+      />
+
+      <DeleteConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={closeDeleteModal}
+        onConfirm={() => confirmDelete(updateNews)}
+        type={deleteModal.type}
+        itemTitle={deleteModal.title}
+        totalItems={newsList.length}
+        itemName="Newsletter"
+      />
+
+      <FeedbackMessages success={success} errorMsg={errorMsg} />
 
       {/* Modal de Imagem Expandida */}
       <AnimatePresence>
@@ -478,19 +414,29 @@ export default function NewsPage({ type = "newsletter" }: { type: string }) {
               >
                 <X className="w-5 h-5" />
               </Button>
-              <img
-                src={expandedImage}
-                alt="Preview expandido"
-                className="max-w-full max-h-[80vh] object-contain rounded-2xl"
-                onError={(e) => {
-                  console.error('Erro ao carregar imagem expandida:', expandedImage);
-                  e.currentTarget.style.display = 'none';
-                }}
-              />
+              {expandedImage.startsWith('blob:') ? (
+                <img
+                  src={expandedImage}
+                  alt="Preview expandido"
+                  className="max-w-full max-h-[80vh] object-contain rounded-2xl"
+                  onError={(e) => {
+                    console.error('Erro ao carregar imagem expandida:', expandedImage);
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              ) : (
+                <Image
+                  src={expandedImage}
+                  alt="Preview expandido"
+                  width={800}
+                  height={600}
+                  className="max-w-full max-h-[80vh] object-contain rounded-2xl"
+                />
+              )}
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </ManageLayout>
   );
 }
