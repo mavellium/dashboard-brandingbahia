@@ -1,9 +1,16 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+export default {
+  proxy: [
+    {
+      path: "/:path*",
+      proxy: "./src/proxy.ts",
+    },
+  ],
   images: {
-    domains: ["mavellium.com.br"],
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "mavellium.com.br",
+      },
+    ],
   },
 };
-
-export default nextConfig;
