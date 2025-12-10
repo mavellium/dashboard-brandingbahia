@@ -61,7 +61,7 @@ export default function HighlightsPage({ type = "highlights" }: { type: string }
     clearFilters,
   } = useListManagement<HighlightItem>({
     type,
-    apiPath: `/api/form/hightlights`,
+    apiPath: `/api/form/highlights`,
     defaultItem: defaultHighlight,
     validationFields: ["textLists", "video"]
   });
