@@ -1,14 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useListManagement } from "@/hooks/useListManagement";
 import { Card } from "@/components/Card";
 import { Input } from "@/components/Input";
 import { Button } from "@/components/Button";
 import { TextArea } from "@/components/TextArea";
-import { HelpCircle, X, Image as ImageIcon } from "lucide-react";
+import { HelpCircle, X, GripVertical, ArrowUpDown } from "lucide-react";
 import { ManageLayout } from "@/components/Manage/ManageLayout";
 import { SearchSortBar } from "@/components/Manage/SearchSortBar";
 import { ItemHeader } from "@/components/Manage/ItemHeader";
@@ -17,6 +17,23 @@ import { DeleteConfirmationModal } from "@/components/Manage/DeleteConfirmationM
 import { FeedbackMessages } from "@/components/Manage/FeedbackMessages";
 import { ImageUpload } from "@/components/Manage/ImageUpload";
 import Image from "next/image";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface ServiceItem {
   id?: string;
@@ -26,12 +43,211 @@ interface ServiceItem {
   file?: File | null;
 }
 
+interface SortableServiceItemProps {
+  service: ServiceItem;
+  index: number;
+  originalIndex: number;
+  isLastInOriginalList: boolean;
+  isLastAndEmpty: boolean;
+  showValidation: boolean;
+  serviceList: ServiceItem[];
+  handleChange: (index: number, field: keyof ServiceItem, value: any) => void;
+  handleFileChange: (index: number, file: File | null) => void;
+  openDeleteSingleModal: (index: number, title: string) => void;
+  setExpandedImage: (image: string | null) => void;
+  getImageUrl: (service: ServiceItem) => string;
+  setNewItemRef?: (node: HTMLDivElement | null) => void;
+}
+
+// Componente de preview de imagem otimizado (definido fora para evitar erro de render)
+const ImagePreviewComponent = ({ imageUrl, alt = "Preview" }: { imageUrl: string, alt?: string }) => {
+  const isBlobUrl = imageUrl.startsWith('blob:');
+  
+  if (isBlobUrl) {
+    // Para blob URLs, use img com tratamento de erro
+    // eslint-disable-next-line @next/next/no-img-element
+    return (
+      <img
+        src={imageUrl}
+        alt={alt}
+        className="h-32 w-full object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-blue-500 transition-all duration-200"
+        onError={(e) => {
+          console.error('Erro ao carregar imagem:', imageUrl);
+          e.currentTarget.style.display = 'none';
+        }}
+      />
+    );
+  } else {
+    // Para URLs externas, use Image do Next.js com domínio configurado
+    return (
+      <Image
+        src={imageUrl}
+        alt={alt}
+        width={128}
+        height={128}
+        className="h-32 w-full object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-blue-500 transition-all duration-200"
+        onError={(e) => {
+          console.error('Erro ao carregar imagem:', imageUrl);
+          e.currentTarget.style.display = 'none';
+        }}
+      />
+    );
+  }
+};
+
+function SortableServiceItem({
+  service,
+  index,
+  originalIndex,
+  isLastInOriginalList,
+  isLastAndEmpty,
+  showValidation,
+  serviceList,
+  handleChange,
+  handleFileChange,
+  openDeleteSingleModal,
+  setExpandedImage,
+  getImageUrl,
+  setNewItemRef,
+}: SortableServiceItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: service.id || `service-${index}` });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const hasTitle = service.title.trim() !== "";
+  const hasDescription = service.description.trim() !== "";
+  const hasImage = Boolean(service.image?.trim() !== "" || service.file);
+  const imageUrl = getImageUrl(service);
+
+  // Combina as refs do sortable e do newItem se necessário
+  const setRefs = useCallback(
+    (node: HTMLDivElement | null) => {
+      // Primeiro, configura a ref do sortable
+      setNodeRef(node);
+      
+      // Depois, se for o último item vazio e tivermos a função setNewItemRef
+      if (isLastAndEmpty && setNewItemRef) {
+        setNewItemRef(node);
+      }
+    },
+    [setNodeRef, isLastAndEmpty, setNewItemRef]
+  );
+
+  return (
+    <div
+      ref={setRefs}
+      style={style}
+      className={`relative ${isDragging ? 'z-50' : ''}`}
+    >
+      <Card className={`mb-4 overflow-hidden transition-all duration-300 ${
+        isLastInOriginalList && showValidation && !hasTitle ? 'ring-2 ring-red-500' : ''
+      } ${isDragging ? 'shadow-lg scale-105' : ''}`}>
+        <div className="p-4 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="cursor-move text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-1 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                {...attributes}
+                {...listeners}
+              >
+                <GripVertical className="w-5 h-5" />
+              </button>
+              <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                <ArrowUpDown className="w-4 h-4" />
+                <span>Posição: {index + 1}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <ItemHeader
+                index={originalIndex}
+                fields={[
+                  { label: 'Título', hasValue: hasTitle },
+                  { label: 'Descrição', hasValue: hasDescription },
+                  { label: 'Imagem', hasValue: hasImage }
+                ]}
+                showValidation={showValidation}
+                isLast={isLastInOriginalList}
+                onDelete={() => openDeleteSingleModal(originalIndex, service.title)}
+                showDelete={serviceList.length > 1}
+              />
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  Título do Serviço
+                </label>
+                <Input
+                  type="text"
+                  placeholder="Nome do serviço..."
+                  value={service.title}
+                  onChange={(e: any) => handleChange(originalIndex, "title", e.target.value)}
+                  className="font-medium"
+                  autoFocus={isLastAndEmpty}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  Descrição
+                </label>
+                <TextArea
+                  placeholder="Descreva o serviço..."
+                  value={service.description}
+                  onChange={(e: any) => handleChange(originalIndex, "description", e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  Imagem
+                </label>
+
+                <ImageUpload
+                  imageUrl={imageUrl}
+                  hasImage={hasImage}
+                  file={service.file || null}
+                  onFileChange={(file) => handleFileChange(originalIndex, file)}
+                  onExpand={setExpandedImage}
+                  label="Imagem do Serviço"
+                  altText="Preview do serviço"
+                  imageInfo={hasImage && !service.file
+                    ? "Imagem atual do servidor. Selecione um novo arquivo para substituir."
+                    : "Formatos suportados: JPG, PNG, WEBP."}
+                  customPreview={imageUrl ? <ImagePreviewComponent imageUrl={imageUrl} /> : undefined}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export default function ServicesPage({ type = "details" }: { type: string }) {
   const defaultService = useMemo(() => ({
     title: "",
     description: "",
     image: "",
-    file: null,
+    file: null
   }), []);
 
   const [expandedImage, setExpandedImage] = useState<string | null>(null);
@@ -69,6 +285,44 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
     validationFields: ["title", "description"]
   });
 
+  // Função para setar a ref do novo item
+  const setNewItemRef = useCallback((node: HTMLDivElement | null) => {
+    if (newItemRef && node) {
+      (newItemRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+    }
+  }, [newItemRef]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over) return;
+
+    if (active.id !== over.id) {
+      const oldIndex = serviceList.findIndex((item) => 
+        item.id === active.id || `service-${serviceList.findIndex(s => s === item)}` === active.id
+      );
+      const newIndex = serviceList.findIndex((item) => 
+        item.id === over.id || `service-${serviceList.findIndex(s => s === item)}` === over.id
+      );
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newList = arrayMove(serviceList, oldIndex, newIndex);
+        setServiceList(newList);
+      }
+    }
+  };
+
   const handleSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setLoading(true);
@@ -88,6 +342,11 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
 
       const fd = new FormData();
       
+      // SEMPRE adicionar o ID no FormData se exists for verdadeiro
+      if (exists && exists.id) {
+        fd.append("id", exists.id);
+      }
+      
       filteredList.forEach((service, i) => {
         fd.append(`values[${i}][title]`, service.title);
         fd.append(`values[${i}][description]`, service.description);
@@ -96,10 +355,16 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
         if (service.file) {
           fd.append(`file${i}`, service.file);
         }
+        
+        // Adicionar ID do serviço individual se existir
+        if (service.id) {
+          fd.append(`values[${i}][id]`, service.id);
+        }
       });
 
       const method = exists ? "PUT" : "POST";
-      const url = exists ? `/api/form/${type}?id=${exists.id}` : `/api/form/${type}`;
+      // URL SEM query parameters - o ID vai no FormData
+      const url = `/api/form/${type}`;
 
       const res = await fetch(url, {
         method,
@@ -131,13 +396,15 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
 
   const handleChange = (index: number, field: keyof ServiceItem, value: any) => {
     const newList = [...serviceList];
-    newList[index][field] = value;
+    // Garantir que estamos criando um novo objeto
+    newList[index] = { ...newList[index], [field]: value };
     setServiceList(newList);
   };
 
   const handleFileChange = (index: number, file: File | null) => {
     const newList = [...serviceList];
-    newList[index].file = file;
+    // Garantir que estamos criando um novo objeto
+    newList[index] = { ...newList[index], file };
     setServiceList(newList);
   };
 
@@ -165,6 +432,7 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
 
     const fd = new FormData();
     
+    // Adicionar o ID do registro principal
     fd.append("id", exists.id);
     
     filteredList.forEach((service, i) => {
@@ -174,6 +442,10 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
       
       if (service.file) {
         fd.append(`file${i}`, service.file);
+      }
+      
+      if (service.id) {
+        fd.append(`values[${i}][id]`, service.id);
       }
     });
 
@@ -194,42 +466,6 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
   // Função wrapper para o submit sem parâmetros
   const handleSubmitWrapper = () => {
     handleSubmit();
-  };
-
-  // Componente de preview de imagem otimizado
-  const ImagePreview = ({ imageUrl, alt = "Preview" }: { imageUrl: string, alt?: string }) => {
-    // Verificar se é uma blob URL (upload) ou URL externa
-    const isBlobUrl = imageUrl.startsWith('blob:');
-    
-    if (isBlobUrl) {
-      // Para blob URLs, use img com tratamento de erro
-      return (
-        <img
-          src={imageUrl}
-          alt={alt}
-          className="h-32 w-full object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-blue-500 transition-all duration-200"
-          onError={(e) => {
-            console.error('Erro ao carregar imagem:', imageUrl);
-            e.currentTarget.style.display = 'none';
-          }}
-        />
-      );
-    } else {
-      // Para URLs externas, use Image do Next.js com domínio configurado
-      return (
-        <Image
-          src={imageUrl}
-          alt={alt}
-          width={128}
-          height={128}
-          className="h-32 w-full object-cover rounded-xl border-2 border-zinc-300 dark:border-zinc-600 group-hover:border-blue-500 transition-all duration-200"
-          onError={(e) => {
-            console.error('Erro ao carregar imagem:', imageUrl);
-            e.currentTarget.style.display = 'none';
-          }}
-        />
-      );
-    }
   };
 
   return (
@@ -259,93 +495,138 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
       <div className="space-y-4 pb-32">
         <form onSubmit={handleSubmit}>
           <AnimatePresence>
-            {filteredServices.map((service: any) => {
-              const originalIndex = serviceList.findIndex(s => s.id === service.id);
-              const hasTitle = service.title.trim() !== "";
-              const hasDescription = service.description.trim() !== "";
-              const hasImage = service.image?.trim() !== "" || service.file;
-              const isLastInOriginalList = originalIndex === serviceList.length - 1;
-              const isLastAndEmpty = isLastInOriginalList && !hasTitle && !hasDescription;
-              const imageUrl = getImageUrl(service);
+            {search ? (
+              // Modo busca - sem drag and drop
+              filteredServices.map((service: any) => {
+                const originalIndex = serviceList.findIndex(s => 
+                  s.id === service.id || 
+                  (s === service) // fallback para quando não há ID
+                );
+                
+                const hasTitle = service.title.trim() !== "";
+                const hasDescription = service.description.trim() !== "";
+                const hasImage = Boolean(service.image?.trim() !== "" || service.file);
+                const isLastInOriginalList = originalIndex === serviceList.length - 1;
+                const isLastAndEmpty = isLastInOriginalList && !hasTitle && !hasDescription;
+                const imageUrl = getImageUrl(service);
 
-              return (
-                <div
-                  key={service.id || originalIndex}
-                  ref={isLastAndEmpty ? newItemRef : null}
-                >
-                  <Card className={`mb-4 overflow-hidden transition-all duration-300 ${
-                    isLastInOriginalList && showValidation && !hasTitle ? 'ring-2 ring-red-500' : ''
-                  }`}>
-                    <div className="p-4 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
-                      <ItemHeader
-                        index={originalIndex}
-                        fields={[
-                          { label: 'Título', hasValue: hasTitle },
-                          { label: 'Descrição', hasValue: hasDescription },
-                          { label: 'Imagem', hasValue: hasImage }
-                        ]}
-                        showValidation={showValidation}
-                        isLast={isLastInOriginalList}
-                        onDelete={() => openDeleteSingleModal(originalIndex, service.title)}
-                        showDelete={serviceList.length > 1}
-                      />
-                      
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                              Título do Serviço
-                            </label>
-                            <Input
-                              type="text"
-                              placeholder="Nome do serviço..."
-                              value={service.title}
-                              onChange={(e: any) => handleChange(originalIndex, "title", e.target.value)}
-                              className="font-medium"
-                              autoFocus={isLastAndEmpty}
-                            />
+                return (
+                  <div
+                    key={service.id || `service-${originalIndex}`}
+                    ref={isLastAndEmpty ? setNewItemRef : null}
+                  >
+                    <Card className={`mb-4 overflow-hidden transition-all duration-300 ${
+                      isLastInOriginalList && showValidation && !hasTitle ? 'ring-2 ring-red-500' : ''
+                    }`}>
+                      <div className="p-4 bg-white dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-700">
+                        <ItemHeader
+                          index={originalIndex}
+                          fields={[
+                            { label: 'Título', hasValue: hasTitle },
+                            { label: 'Descrição', hasValue: hasDescription },
+                            { label: 'Imagem', hasValue: hasImage }
+                          ]}
+                          showValidation={showValidation}
+                          isLast={isLastInOriginalList}
+                          onDelete={() => openDeleteSingleModal(originalIndex, service.title)}
+                          showDelete={serviceList.length > 1}
+                        />
+                        
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                                Título do Serviço
+                              </label>
+                              <Input
+                                type="text"
+                                placeholder="Nome do serviço..."
+                                value={service.title}
+                                onChange={(e: any) => handleChange(originalIndex, "title", e.target.value)}
+                                className="font-medium"
+                                autoFocus={isLastAndEmpty}
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                                Descrição
+                              </label>
+                              <TextArea
+                                placeholder="Descreva o serviço..."
+                                value={service.description}
+                                onChange={(e: any) => handleChange(originalIndex, "description", e.target.value)}
+                                rows={3}
+                              />
+                            </div>
                           </div>
 
-                          <div>
-                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                              Descrição
-                            </label>
-                            <TextArea
-                              placeholder="Descreva o serviço..."
-                              value={service.description}
-                              onChange={(e: any) => handleChange(originalIndex, "description", e.target.value)}
-                              rows={3}
-                            />
-                          </div>
-                        </div>
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                                Imagem
+                              </label>
 
-                        <div className="space-y-4">
-                          <div>
-                            <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                              Imagem
-                            </label>
-
-                            <ImageUpload
-                              imageUrl={imageUrl}
-                              hasImage={hasImage}
-                              file={service.file}
-                              onFileChange={(file) => handleFileChange(originalIndex, file)}
-                              onExpand={setExpandedImage}
-                              label="Imagem do Serviço"
-                              altText="Preview do serviço"
-                              imageInfo={hasImage && !service.file
-                                ? "Imagem atual do servidor. Selecione um novo arquivo para substituir."
-                                : "Formatos suportados: JPG, PNG, WEBP."}
-                              customPreview={imageUrl ? <ImagePreview imageUrl={imageUrl} /> : undefined}
-                            />
+                              <ImageUpload
+                                imageUrl={imageUrl}
+                                hasImage={hasImage}
+                                file={service.file || null}
+                                onFileChange={(file) => handleFileChange(originalIndex, file)}
+                                onExpand={setExpandedImage}
+                                label="Imagem do Serviço"
+                                altText="Preview do serviço"
+                                imageInfo={hasImage && !service.file
+                                  ? "Imagem atual do servidor. Selecione um novo arquivo para substituir."
+                                  : "Formatos suportados: JPG, PNG, WEBP."}
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  </Card>
-                </div>
-              );
-            })}
+                    </Card>
+                  </div>
+                );
+              })
+            ) : (
+              // Modo normal - com drag and drop
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={serviceList.map((item, index) => item.id || `service-${index}`)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {serviceList.map((service, index) => {
+                    const originalIndex = index;
+                    const hasTitle = service.title.trim() !== "";
+                    const hasDescription = service.description.trim() !== "";
+                    const isLastInOriginalList = index === serviceList.length - 1;
+                    const isLastAndEmpty = isLastInOriginalList && !hasTitle && !hasDescription;
+
+                    return (
+                      <SortableServiceItem
+                        key={service.id || `service-${index}`}
+                        service={service}
+                        index={index}
+                        originalIndex={originalIndex}
+                        isLastInOriginalList={isLastInOriginalList}
+                        isLastAndEmpty={isLastAndEmpty}
+                        showValidation={showValidation}
+                        serviceList={serviceList}
+                        handleChange={handleChange}
+                        handleFileChange={handleFileChange}
+                        openDeleteSingleModal={openDeleteSingleModal}
+                        setExpandedImage={setExpandedImage}
+                        getImageUrl={getImageUrl}
+                        setNewItemRef={isLastAndEmpty ? setNewItemRef : undefined}
+                      />
+                    );
+                  })}
+                </SortableContext>
+              </DndContext>
+            )}
           </AnimatePresence>
         </form>
       </div>
@@ -400,6 +681,7 @@ export default function ServicesPage({ type = "details" }: { type: string }) {
                 <X className="w-5 h-5" />
               </Button>
               {expandedImage.startsWith('blob:') ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={expandedImage}
                   alt="Preview expandido"

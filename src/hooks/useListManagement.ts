@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 
 interface UseListManagementProps<T> {
   type: string;
@@ -23,7 +23,7 @@ export function useListManagement<T extends { id?: string }>({
   defaultItem,
   validationFields = []
 }: UseListManagementProps<T>) {
-  const [list, setList] = useState<T[]>([defaultItem]);
+  const [list, setList] = useState<T[]>([{...defaultItem}]);
   const [exists, setExists] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -47,22 +47,16 @@ export function useListManagement<T extends { id?: string }>({
         if (!res.ok) return;
 
         const data = await res.json();
-        console.log('Dados carregados da API:', data); // Debug
 
-        // A API pode retornar diretamente o array de itens
-        // OU pode retornar um array de objetos com propriedade 'values'
         let itemsArray: any[] = [];
         let savedExists = null;
 
         if (Array.isArray(data)) {
           if (data.length > 0 && data[0].values) {
-            // Estrutura: [{id: "...", type: "...", values: [...]}]
             savedExists = data[0];
             itemsArray = data[0].values || [];
           } else {
-            // Estrutura: [{...item1}, {...item2}] (diretamente o array de itens)
             itemsArray = data;
-            // Para highlights, criamos um objeto exists básico
             if (itemsArray.length > 0) {
               savedExists = {
                 id: `temp-${type}-${Date.now()}`,
@@ -78,13 +72,15 @@ export function useListManagement<T extends { id?: string }>({
           id: val.id || `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${index}`,
         }));
 
-        console.log('Lista processada:', safeList); // Debug
-
         if (safeList.length > 0) {
           setExists(savedExists);
           setList(safeList);
         } else {
-          setList([defaultItem]);
+          // Criar uma NOVA cópia do defaultItem para o primeiro item
+          setList([{
+            ...defaultItem,
+            id: `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          }]);
         }
       } catch (e) {
         console.error('Erro ao carregar dados:', e);
@@ -92,10 +88,18 @@ export function useListManagement<T extends { id?: string }>({
     }
 
     loadData();
-  }, [apiPath, type, defaultItem]);
+  }, [apiPath, type]);
+
+  // Função para criar um novo item vazio
+  const createNewItem = useCallback((): T => {
+    return {
+      ...defaultItem,
+      id: `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    };
+  }, [defaultItem, type]);
 
   // Verificar se pode adicionar novo item
-  const canAddNewItem = () => {
+  const canAddNewItem = useCallback(() => {
     if (search) return false;
     
     const lastItem = list[list.length - 1];
@@ -108,7 +112,7 @@ export function useListManagement<T extends { id?: string }>({
       if (Array.isArray(value)) return value.some((v: string) => v.trim() !== "");
       return !!value;
     });
-  };
+  }, [list, search, validationFields]);
 
   // Filtrar e ordenar itens
   const filteredItems = useMemo(() => {
@@ -118,7 +122,6 @@ export function useListManagement<T extends { id?: string }>({
         if (!search) return true;
         
         const searchLower = search.toLowerCase();
-        // Busca em todos os campos string do item
         return Object.entries(item).some(([key, value]) => {
           if (key === 'originalIndex' || key === 'file') return false;
           if (typeof value === 'string') {
@@ -142,7 +145,7 @@ export function useListManagement<T extends { id?: string }>({
     return filtered;
   }, [list, search, sortOrder]);
 
-  const addItem = (newItem?: T) => {
+  const addItem = useCallback((newItem?: T) => {
     if (search) {
       setErrorMsg("Limpe a busca antes de adicionar um novo item.");
       setTimeout(() => setErrorMsg(""), 3000);
@@ -167,10 +170,8 @@ export function useListManagement<T extends { id?: string }>({
       }
     }
 
-    const itemToAdd = newItem || {
-      ...defaultItem,
-      id: `${type}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    };
+    // Usar createNewItem para garantir uma cópia independente
+    const itemToAdd = newItem || createNewItem();
     
     setList([...list, itemToAdd]);
     setShowValidation(false);
@@ -181,54 +182,58 @@ export function useListManagement<T extends { id?: string }>({
         block: 'center'
       });
     }, 100);
-  };
+  }, [list, search, validationFields, createNewItem]);
 
   // Funções para modais de exclusão
-  const openDeleteSingleModal = (index: number, title: string) => {
+  const openDeleteSingleModal = useCallback((index: number, title: string) => {
     setDeleteModal({
       isOpen: true,
       type: 'single',
       index,
       title: title || "Item sem título"
     });
-  };
+  }, []);
 
-  const openDeleteAllModal = () => {
+  const openDeleteAllModal = useCallback(() => {
     setDeleteModal({
       isOpen: true,
       type: 'all',
       index: null,
       title: ''
     });
-  };
+  }, []);
 
-  const closeDeleteModal = () => {
+  const closeDeleteModal = useCallback(() => {
     setDeleteModal({
       isOpen: false,
       type: null,
       index: null,
       title: ''
     });
-  };
+  }, []);
 
-  const confirmDelete = async (updateFunction?: (newList: T[]) => Promise<void>) => {
+  const confirmDelete = useCallback(async (updateFunction?: (newList: T[]) => Promise<void>) => {
     if (deleteModal.type === 'all') {
-      setList([defaultItem]);
+      // Criar uma NOVA cópia para o item vazio
+      const newEmptyItem = createNewItem();
+      setList([newEmptyItem]);
       setSearch("");
       setSortOrder('asc');
       setShowValidation(false);
       
       if (exists && updateFunction) {
         try {
-          await updateFunction([defaultItem]);
+          await updateFunction([newEmptyItem]);
         } catch (err: any) {
           console.error("Erro ao limpar itens:", err);
         }
       }
     } else if (deleteModal.type === 'single' && deleteModal.index !== null) {
       if (list.length === 1) {
-        setList([defaultItem]);
-        if (exists && updateFunction) await updateFunction([defaultItem]);
+        // Se é o último item, criar um novo item vazio
+        const newEmptyItem = createNewItem();
+        setList([newEmptyItem]);
+        if (exists && updateFunction) await updateFunction([newEmptyItem]);
       } else {
         const newList = list.filter((_, i) => i !== deleteModal.index);
         setList(newList);
@@ -237,14 +242,14 @@ export function useListManagement<T extends { id?: string }>({
     }
     
     closeDeleteModal();
-  };
+  }, [deleteModal, list, exists, createNewItem, closeDeleteModal]);
 
-  const clearFilters = () => {
+  const clearFilters = useCallback(() => {
     setSearch("");
     setSortOrder('asc');
-  };
+  }, []);
 
-  const getCompleteCount = (): number => {
+  const getCompleteCount = useCallback((): number => {
     if (validationFields.length === 0) return list.length;
     
     return list.filter(item => 
@@ -255,7 +260,7 @@ export function useListManagement<T extends { id?: string }>({
         return !!value;
       })
     ).length;
-  };
+  }, [list, validationFields]);
 
   return {
     // Estado
